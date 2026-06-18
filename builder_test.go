@@ -92,6 +92,30 @@ func TestBuilderSelection(t *testing.T) {
 	}
 }
 
+// TestMixedMonorepoDetection guards the union fix: a Dockerfile folder must not
+// shadow manifest-only folders in the same repo.
+func TestMixedMonorepoDetection(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"ml/pyproject.toml":  "[project]\nname = \"ml\"\n",
+		"web/package.json":   `{"devDependencies":{"vite":"^5"}}`,
+		"web/pnpm-lock.yaml":  "",
+		"web/vite.config.ts":  "export default {}",
+		"api/Dockerfile":      "FROM scratch",
+	})
+	rules, _ := loadRules()
+	s, _ := scan(root)
+	mods := map[string]bool{}
+	for _, c := range detectComponents(s, rules) {
+		mods[c.Module] = true
+	}
+	for _, want := range []string{"ml", "web", "api"} {
+		if !mods[want] {
+			t.Errorf("missing component %q (got %v)", want, mods)
+		}
+	}
+}
+
 func TestRenderNewDockerfiles(t *testing.T) {
 	cases := []struct {
 		c     Component

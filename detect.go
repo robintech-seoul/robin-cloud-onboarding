@@ -79,33 +79,28 @@ var anchorManifests = map[string]bool{
 	"composer.json": true, "Gemfile": true,
 }
 
-// candidateDirs returns the directories to treat as deployable components, in
-// fidelity order: every directory containing a Dockerfile; else every directory
-// containing an anchor manifest; else the repo root.
+// candidateDirs returns the directories to treat as deployable components: every
+// directory that contains a Dockerfile OR an anchor manifest (unioned, so a mixed
+// monorepo where some folders have Dockerfiles and others only manifests is fully
+// covered); the repo root as a fallback when nothing matches.
 func candidateDirs(s *Signals) []string {
-	dockerSeen, manifestSeen := map[string]bool{}, map[string]bool{}
-	var withDocker, withManifest []string
+	seen := map[string]bool{}
+	var dirs []string
 	for f := range s.files {
-		base, d := path.Base(f), path.Dir(f)
-		if base == "Dockerfile" && !dockerSeen[d] {
-			dockerSeen[d] = true
-			withDocker = append(withDocker, d)
+		base := path.Base(f)
+		if base != "Dockerfile" && !anchorManifests[base] {
+			continue
 		}
-		if anchorManifests[base] && !manifestSeen[d] {
-			manifestSeen[d] = true
-			withManifest = append(withManifest, d)
+		if d := path.Dir(f); !seen[d] {
+			seen[d] = true
+			dirs = append(dirs, d)
 		}
 	}
-	switch {
-	case len(withDocker) > 0:
-		sort.Strings(withDocker)
-		return withDocker
-	case len(withManifest) > 0:
-		sort.Strings(withManifest)
-		return withManifest
-	default:
+	if len(dirs) == 0 {
 		return []string{"."}
 	}
+	sort.Strings(dirs)
+	return dirs
 }
 
 // detectComponents matches rules against each candidate dir and resolves modules.
