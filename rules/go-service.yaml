@@ -1,0 +1,18 @@
+id: go-service
+name: Go service
+kind: service
+priority: 40              # lower than framework-specific rules; go.mod is a broad signal
+
+detect:
+  all:
+    - file: go.mod
+
+component:
+  suggestedModule: api            # → ECR repo <project>-api, deploy component "api"
+  defaultPort: 8080
+
+dockerfile:
+  ifMissing: go                   # templates/dockerfile/go.Dockerfile.tmpl (multi-stage, distroless)
+
+build:
+  test: "go test ./..."

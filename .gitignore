@@ -1,0 +1,8 @@
+# compiled binary
+/rcloud
+/robin-cloud-onboarding
+/bin/
+# coverage / profiling
+*.out
+coverage.*
+.DS_Store

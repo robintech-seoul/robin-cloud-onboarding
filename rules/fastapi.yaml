@@ -1,0 +1,25 @@
+id: fastapi
+name: FastAPI (Python)
+kind: service             # internal service, not exposed unless the plan says so
+priority: 50
+
+detect:
+  # A FastAPI match needs a python manifest that declares fastapi or uvicorn.
+  # A `dependency` condition is false when its manifest is absent, so listing both
+  # manifests under `any` covers requirements.txt- and pyproject.toml-based projects.
+  any:
+    - dependency: { manifest: pyproject.toml, name: fastapi }
+    - dependency: { manifest: requirements.txt, name: fastapi }
+    - dependency: { manifest: pyproject.toml, name: uvicorn }
+    - dependency: { manifest: requirements.txt, name: uvicorn }
+
+component:
+  suggestedModule: api            # → ECR repo <project>-api, deploy component "api"
+  defaultPort: 8000
+
+dockerfile:
+  ifMissing: fastapi              # templates/dockerfile/fastapi.Dockerfile.tmpl
+
+build:
+  install: "pip install -e '.[dev]' || pip install -r requirements.txt || true"
+  test: "pytest -q"

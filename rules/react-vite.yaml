@@ -1,0 +1,31 @@
+id: react-vite
+name: React (Vite)
+kind: web                 # exposed via ingress
+priority: 50
+
+detect:
+  all:
+    - file: package.json
+  any:
+    - dependency: { manifest: package.json, name: vite }
+    - file: vite.config.ts
+    - file: vite.config.js
+  none:
+    - file: next.config.js        # Next.js is a different rule
+    - file: nuxt.config.ts
+
+component:
+  suggestedModule: web            # → ECR repo <project>-web, deploy component "web"
+  defaultPort: 80                 # served by nginx in the generated Dockerfile
+
+dockerfile:
+  ifMissing: react-vite           # templates/dockerfile/react-vite.Dockerfile.tmpl
+  # Vite inlines VITE_* envs at build time, so they must be docker build-args
+  # sourced from GitHub Actions secrets (not runtime env).
+  buildArgsFromSecrets: ["VITE_*"]
+
+build:
+  setup: corepack enable
+  install: "{{pm}} install --frozen-lockfile"
+  command: "{{pm}} build"         # runs tsc + vite build
+  test: "{{pm}} test"
