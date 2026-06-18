@@ -20,8 +20,10 @@ type Options struct {
 	Region         string
 	ConsoleBaseURL string
 	OIDCRole       string
-	Branch         string
-	DryRun         bool
+	Branch          string
+	ActionRef       string
+	DryRun          bool
+	SkipDockerfiles bool
 }
 
 func main() {
@@ -39,7 +41,9 @@ func run() error {
 	flag.StringVar(&o.ConsoleBaseURL, "console", "https://console.robintech.cloud", "Robin-Cloud console base URL")
 	flag.StringVar(&o.OIDCRole, "oidc-role", "", "IAM role assumed via GitHub OIDC (default: read from the ROBIN_OIDC_ROLE secret; pass a name to bake a literal)")
 	flag.StringVar(&o.Branch, "branch", "main", "branch that triggers deploys")
+	flag.StringVar(&o.ActionRef, "action-ref", "robintech-seoul/robin-cloud-onboarding/.github/actions/deploy-component@main", "the Robin-Cloud deploy composite action (pin a tag/SHA for production)")
 	flag.BoolVar(&o.DryRun, "dry-run", false, "print the plan and workflow without writing files")
+	flag.BoolVar(&o.SkipDockerfiles, "skip-dockerfiles", false, "do not generate Dockerfiles for components missing one")
 	flag.Parse()
 
 	if o.Project == "" {
@@ -66,19 +70,53 @@ func run() error {
 		return fmt.Errorf("render workflow: %w", err)
 	}
 
+	const wfPath = ".github/workflows/deploy-robin-cloud.yml"
 	if o.DryRun {
-		fmt.Println("\n--- .github/workflows/deploy-robin-cloud.yml (dry-run) ---")
+		fmt.Printf("\n--- %s (dry-run) ---\n", wfPath)
 		fmt.Print(string(wf))
-		return nil
-	}
-	if err := writeRepoFile(o.Root, ".github/workflows/deploy-robin-cloud.yml", wf); err != nil {
-		return fmt.Errorf("write workflow: %w", err)
-	}
-	fmt.Println("\nwrote .github/workflows/deploy-robin-cloud.yml")
-	for _, c := range plan.Components {
-		if c.GenerateDockerfile {
-			fmt.Printf("note: component %q has no Dockerfile — Dockerfile generation (template %q) is a later slice; add one to build.\n", c.Module, c.DockerTemplate)
+	} else {
+		if err := writeRepoFile(o.Root, wfPath, wf); err != nil {
+			return fmt.Errorf("write workflow: %w", err)
 		}
+		fmt.Printf("\nwrote %s\n", wfPath)
+	}
+
+	if !o.SkipDockerfiles {
+		if err := generateDockerfiles(o, plan); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// generateDockerfiles writes a Dockerfile for each component that lacks one. It NEVER
+// overwrites an existing Dockerfile. In dry-run it prints what it would write.
+func generateDockerfiles(o Options, plan Plan) error {
+	for _, c := range plan.Components {
+		if !c.GenerateDockerfile {
+			continue
+		}
+		content, ok, err := renderDockerfile(c)
+		if err != nil {
+			return fmt.Errorf("render Dockerfile for %q: %w", c.Module, err)
+		}
+		rel := dockerfilePath(c.Context)
+		if !ok {
+			fmt.Printf("note: component %q (stack %q) has no Dockerfile template — add %s manually\n", c.Module, c.DockerTemplate, rel)
+			continue
+		}
+		if o.DryRun {
+			fmt.Printf("\n--- %s (dry-run) ---\n%s", rel, content)
+			continue
+		}
+		if repoFileExists(o.Root, rel) {
+			fmt.Printf("note: %s already exists — left unchanged\n", rel)
+			continue
+		}
+		if err := writeRepoFile(o.Root, rel, content); err != nil {
+			return fmt.Errorf("write %s: %w", rel, err)
+		}
+		fmt.Printf("wrote %s\n", rel)
 	}
 	return nil
 }
@@ -90,13 +128,18 @@ func printPlan(p Plan) {
 	for _, c := range p.Components {
 		rule := c.RuleID
 		if rule == "" {
-			rule = "(dockerfile-only)"
+			rule = "(none)"
 		}
-		df := "uses existing Dockerfile"
-		if c.GenerateDockerfile {
-			df = "needs Dockerfile (template: " + c.DockerTemplate + ")"
+		var build string
+		switch {
+		case c.Builder == "buildpacks":
+			build = "buildpacks (no Dockerfile)"
+		case c.GenerateDockerfile:
+			build = "generate Dockerfile (" + c.DockerTemplate + ")"
+		default:
+			build = "existing Dockerfile"
 		}
-		fmt.Printf("    - %-8s ctx=%-12s ecr=%s-%s  port=%d  rule=%s  [%s]\n",
-			c.Module, c.Context, p.Project, c.Module, c.Port, rule, df)
+		fmt.Printf("    - %-8s ctx=%-12s ecr=%s-%s  port=%d  rule=%-12s [%s]\n",
+			c.Module, c.Context, p.Project, c.Module, c.Port, rule, build)
 	}
 }

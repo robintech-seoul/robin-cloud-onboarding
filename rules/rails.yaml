@@ -1,0 +1,17 @@
+id: rails
+name: Ruby on Rails
+kind: web
+priority: 60
+
+detect:
+  any:
+    - file: bin/rails
+    - file: config/application.rb
+    - dependency: { manifest: Gemfile, name: rails }
+
+component:
+  suggestedModule: web
+  defaultPort: 3000
+
+# No dockerfile.ifMissing → built via Cloud Native Buildpacks (Paketo Ruby buildpack),
+# which handles bundler + asset precompile better than a generic template.

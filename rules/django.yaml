@@ -1,0 +1,17 @@
+id: django
+name: Django (Python)
+kind: service
+priority: 60
+
+detect:
+  any:
+    - dependency: { manifest: requirements.txt, name: django }
+    - dependency: { manifest: pyproject.toml, name: django }
+    - file: manage.py
+
+component:
+  suggestedModule: api
+  defaultPort: 8000
+
+dockerfile:
+  ifMissing: django               # templates/dockerfile/django.Dockerfile.tmpl (gunicorn wsgi)

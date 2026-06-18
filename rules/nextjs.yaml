@@ -1,0 +1,21 @@
+id: nextjs
+name: Next.js
+kind: web
+priority: 60              # must beat react-vite (both are package.json/node)
+
+detect:
+  all:
+    - file: package.json
+  any:
+    - dependency: { manifest: package.json, name: next }
+    - file: next.config.js
+    - file: next.config.mjs
+    - file: next.config.ts
+
+component:
+  suggestedModule: web
+  defaultPort: 3000
+
+dockerfile:
+  ifMissing: nextjs               # templates/dockerfile/nextjs.Dockerfile.tmpl
+  buildArgsFromSecrets: ["NEXT_PUBLIC_*"]

@@ -47,14 +47,14 @@ func TestDetectComponents(t *testing.T) {
 			want:  map[string]string{"api": "go-service"},
 		},
 		{
-			// Next.js is not (yet) a supported rule, and the `none` guard keeps it
-			// from matching react-vite — so with no Dockerfile there's no component.
-			name: "next.js does not false-match react-vite",
+			// Next.js routes to the nextjs rule (higher priority), not react-vite —
+			// react-vite's `none: next.config.js` guard keeps it from matching.
+			name: "next.js routes to nextjs, not react-vite",
 			files: map[string]string{
 				"package.json":   `{"dependencies":{"next":"^14","react":"^18"}}`,
 				"next.config.js": "module.exports={}",
 			},
-			want: map[string]string{},
+			want: map[string]string{"web": "nextjs"},
 		},
 	}
 
@@ -89,6 +89,7 @@ func TestRenderWorkflowValidYAML(t *testing.T) {
 		Project: "acme", Region: "ap-northeast-2",
 		ConsoleBaseURL: "https://console.robintech.cloud",
 		OIDCRole:       "deploy-role", DefaultBranch: "main",
+		ActionRef: "robintech-seoul/robin-cloud-onboarding/.github/actions/deploy-component@v0.2.0",
 		Components: []Component{
 			{Module: "api", Context: ".", FilterGlob: "**", ModuleEnv: "API", Port: 8000},
 			{Module: "web", Context: "./web", FilterGlob: "web/**", ModuleEnv: "WEB", Port: 80},

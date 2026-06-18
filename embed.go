@@ -10,3 +10,6 @@ var rulesFS embed.FS
 
 //go:embed templates/workflows/deploy-robin-cloud.yml.tmpl
 var workflowTmpl string
+
+//go:embed templates/dockerfile/*.tmpl
+var dockerfileFS embed.FS

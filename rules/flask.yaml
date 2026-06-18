@@ -1,0 +1,16 @@
+id: flask
+name: Flask (Python)
+kind: service
+priority: 60
+
+detect:
+  any:
+    - dependency: { manifest: requirements.txt, name: flask }
+    - dependency: { manifest: pyproject.toml, name: flask }
+
+component:
+  suggestedModule: api
+  defaultPort: 8000
+
+dockerfile:
+  ifMissing: flask                # templates/dockerfile/flask.Dockerfile.tmpl (gunicorn)

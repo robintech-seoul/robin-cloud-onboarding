@@ -1,0 +1,18 @@
+id: spring-boot
+name: Spring Boot (Java/Kotlin)
+kind: service
+priority: 60
+
+detect:
+  any:
+    - content: { file: pom.xml, matches: spring-boot }
+    - content: { file: build.gradle, matches: spring-boot }
+    - content: { file: build.gradle.kts, matches: spring-boot }
+
+component:
+  suggestedModule: api
+  defaultPort: 8080
+
+# No dockerfile.ifMissing → built via Cloud Native Buildpacks. Spring Boot has
+# first-class buildpack support (the Paketo Java buildpack), so a hand-rolled
+# Maven/Gradle + JRE Dockerfile is not worth maintaining here.

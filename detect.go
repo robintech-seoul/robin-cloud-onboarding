@@ -15,10 +15,17 @@ type Component struct {
 	Port                 int
 	Kind                 string
 	RuleID               string
-	GenerateDockerfile   bool     // no Dockerfile present → must be generated
+	Builder              string   // "dockerfile" | "buildpacks"
+	GenerateDockerfile   bool     // missing Dockerfile AND a stack template exists → generate one
 	DockerTemplate       string   // rule's dockerfile.ifMissing template id
 	BuildArgsFromSecrets []string
 	ModuleEnv            string // module uppercased for shell env var names
+
+	// Stack-specific inputs for Dockerfile generation.
+	PackageManager  string // node: npm | pnpm | yarn
+	PyModule        string // python: module:callable (fastapi/flask), e.g. "app.main:app"
+	DjangoWsgi      string // django: gunicorn WSGI target, e.g. "config.wsgi:application"
+	HasRequirements bool   // python: requirements.txt present (vs pyproject.toml)
 }
 
 func evalCondition(s *Signals, dir string, c Condition) bool {
@@ -114,11 +121,10 @@ func detectComponents(s *Signals, rules []Rule) []Component {
 			}
 		}
 		hasDocker := s.files[relKey(dir, "Dockerfile")]
-		if best == nil && !hasDocker {
-			continue // no rule and no Dockerfile → not a deployable unit
-		}
+		// Every candidate dir is a real project dir (it has a Dockerfile or an anchor
+		// manifest), so an unmatched dir is still deployable — via buildpacks.
 
-		module, port, kind, ruleID := "app", 8080, "service", ""
+		module, port, kind, ruleID := dirModule(dir), 8080, "service", ""
 		var tmpl string
 		var buildArgs []string
 		if best != nil {
@@ -140,6 +146,28 @@ func detectComponents(s *Signals, rules []Rule) []Component {
 			filter = dir + "/**"
 		}
 
+		// Build strategy (fidelity order): existing Dockerfile → generate one from a
+		// stack template → Cloud Native Buildpacks for everything else.
+		willGenerate := !hasDocker && hasDockerfileTemplate(tmpl)
+		builder := "buildpacks"
+		if hasDocker || willGenerate {
+			builder = "dockerfile"
+		}
+
+		// Stack-specific inputs for Dockerfile generation.
+		var pm, pyModule, djangoWsgi string
+		var hasReq bool
+		switch tmpl {
+		case "react-vite", "nextjs":
+			pm = detectPackageManager(s, dir)
+		case "fastapi", "flask":
+			pyModule = detectPyModule(s, dir)
+			hasReq = s.hasFile(dir, "requirements.txt")
+		case "django":
+			djangoWsgi = detectDjangoWsgi(s, dir)
+			hasReq = s.hasFile(dir, "requirements.txt")
+		}
+
 		comps = append(comps, Component{
 			Module:               module,
 			Context:              workflowPath(dir),
@@ -147,13 +175,26 @@ func detectComponents(s *Signals, rules []Rule) []Component {
 			Port:                 port,
 			Kind:                 kind,
 			RuleID:               ruleID,
-			GenerateDockerfile:   !hasDocker,
+			Builder:              builder,
+			GenerateDockerfile:   willGenerate,
 			DockerTemplate:       tmpl,
 			BuildArgsFromSecrets: buildArgs,
 			ModuleEnv:            envName(module),
+			PackageManager:       pm,
+			PyModule:             pyModule,
+			DjangoWsgi:           djangoWsgi,
+			HasRequirements:      hasReq,
 		})
 	}
 	return comps
+}
+
+// dirModule names a component from its directory ("." → "app", else the basename).
+func dirModule(dir string) string {
+	if dir == "." || dir == "" {
+		return "app"
+	}
+	return path.Base(dir)
 }
 
 func workflowPath(p string) string {
@@ -177,4 +218,72 @@ func dedupeModule(m string, used map[string]bool) string {
 			return c
 		}
 	}
+}
+
+// detectPackageManager picks the node package manager from the lockfile present.
+func detectPackageManager(s *Signals, dir string) string {
+	switch {
+	case s.hasFile(dir, "pnpm-lock.yaml"):
+		return "pnpm"
+	case s.hasFile(dir, "yarn.lock"):
+		return "yarn"
+	default:
+		return "npm"
+	}
+}
+
+// detectPyModule guesses the uvicorn ASGI target from the entrypoint file present.
+// The app object name is assumed to be "app" (the overwhelming convention); the
+// generated Dockerfile carries a comment telling the user to adjust if it differs.
+func detectPyModule(s *Signals, dir string) string {
+	switch {
+	case s.hasFile(dir, "app/main.py"):
+		return "app.main:app"
+	case s.hasFile(dir, "main.py"):
+		return "main:app"
+	case s.hasFile(dir, "app.py"):
+		return "app:app"
+	case s.hasFile(dir, "server.py"):
+		return "server:app"
+	default:
+		return "app.main:app"
+	}
+}
+
+// hasDockerfileTemplate reports whether a Dockerfile template exists for a stack id.
+func hasDockerfileTemplate(id string) bool {
+	if id == "" {
+		return false
+	}
+	_, err := dockerfileFS.ReadFile("templates/dockerfile/" + id + ".Dockerfile.tmpl")
+	return err == nil
+}
+
+// detectDjangoWsgi finds the Django WSGI target ("<project>.wsgi:application") by
+// locating a top-level "<project>/wsgi.py" under the context; defaults if none found.
+func detectDjangoWsgi(s *Signals, dir string) string {
+	prefix := ""
+	if dir != "." {
+		prefix = dir + "/"
+	}
+	for f := range s.files {
+		rest, ok := strings.CutPrefix(f, prefix)
+		if !ok {
+			continue
+		}
+		if proj := path.Dir(rest); strings.HasSuffix(rest, "/wsgi.py") && !strings.Contains(proj, "/") {
+			return proj + ".wsgi:application"
+		}
+	}
+	return "config.wsgi:application"
+}
+
+// dockerfilePath returns the repo-relative path of the Dockerfile for a component's
+// build context ("." → "Dockerfile", "./web" → "web/Dockerfile").
+func dockerfilePath(ctx string) string {
+	ctx = strings.TrimPrefix(ctx, "./")
+	if ctx == "" || ctx == "." {
+		return "Dockerfile"
+	}
+	return ctx + "/Dockerfile"
 }

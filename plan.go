@@ -12,6 +12,7 @@ type Plan struct {
 	ConsoleBaseURL string
 	OIDCRole       string
 	DefaultBranch  string
+	ActionRef      string // the deploy composite action ref (owner/repo/path@ref)
 	Components     []Component
 	AnyChangedExpr string // "needs.changes.outputs.api == 'true' || ..."
 }
@@ -36,6 +37,7 @@ func buildPlan(o Options, comps []Component) (Plan, error) {
 		ConsoleBaseURL: o.ConsoleBaseURL,
 		OIDCRole:       role,
 		DefaultBranch:  o.Branch,
+		ActionRef:      o.ActionRef,
 		Components:     comps,
 		AnyChangedExpr: strings.Join(exprs, " || "),
 	}, nil

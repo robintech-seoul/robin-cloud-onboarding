@@ -1,0 +1,119 @@
+name: "Deploy component to Robin-Cloud"
+description: >-
+  Build one component's image and push it to Robin-Cloud's ECR via GitHub OIDC, then
+  request a deploy. If the build context has a Dockerfile it is built with Docker;
+  otherwise the image is built with Cloud Native Buildpacks (no Dockerfile needed).
+  Account ID and role are INPUTS (from the caller's secrets/vars) — never hardcoded.
+
+inputs:
+  project:
+    description: "Robin-Cloud project name"
+    required: true
+  module:
+    description: "Component/module name (= ECR repo suffix and deploy component key)"
+    required: true
+  context:
+    description: "Build context path"
+    required: true
+  tag:
+    description: "Image tag (usually the commit SHA)"
+    required: true
+  aws-account-id:
+    description: "Robin-Cloud AWS account ID — pass from a secret/var, not a literal"
+    required: true
+  oidc-role:
+    description: "IAM role assumed via GitHub OIDC — pass from a secret/var"
+    required: true
+  deploy-token:
+    description: "Per-project deploy token (secret)"
+    required: true
+  region:
+    description: "AWS region (non-sensitive default)"
+    required: false
+    default: "ap-northeast-2"
+  console-url:
+    description: "Robin-Cloud console base URL (non-sensitive default)"
+    required: false
+    default: "https://console.robintech.cloud"
+  buildpacks-builder:
+    description: "CNB builder image used when no Dockerfile is present"
+    required: false
+    default: "paketobuildpacks/builder-jammy-full"
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ inputs.aws-account-id }}:role/${{ inputs.oidc-role }}
+        aws-region: ${{ inputs.region }}
+
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Pick build strategy (Dockerfile vs buildpacks)
+      id: strategy
+      shell: bash
+      run: |
+        if [ -f "${{ inputs.context }}/Dockerfile" ]; then
+          echo "mode=dockerfile" >> "$GITHUB_OUTPUT"
+        else
+          echo "mode=buildpacks" >> "$GITHUB_OUTPUT"
+          echo "::notice::${{ inputs.module }}: no Dockerfile — building with Cloud Native Buildpacks (${{ inputs.buildpacks-builder }})."
+        fi
+
+    # ---- Dockerfile path ----
+    - name: Set up Docker Buildx
+      if: steps.strategy.outputs.mode == 'dockerfile'
+      uses: docker/setup-buildx-action@v3
+    - name: Build and push (Docker)
+      if: steps.strategy.outputs.mode == 'dockerfile'
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context }}
+        push: true
+        tags: |
+          ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.region }}.amazonaws.com/${{ inputs.project }}-${{ inputs.module }}:${{ inputs.tag }}
+          ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.region }}.amazonaws.com/${{ inputs.project }}-${{ inputs.module }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # ---- Buildpacks path (no Dockerfile) ----
+    - name: Build and push (Buildpacks)
+      if: steps.strategy.outputs.mode == 'buildpacks'
+      shell: bash
+      env:
+        IMG: ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.region }}.amazonaws.com/${{ inputs.project }}-${{ inputs.module }}
+        BUILDER: ${{ inputs.buildpacks-builder }}
+        CONTEXT: ${{ inputs.context }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        # Install the latest pack CLI (linux amd64) without pinning a version.
+        url=$(curl -sSL https://api.github.com/repos/buildpacks/pack/releases/latest \
+          | grep browser_download_url | grep 'linux.tgz' | grep -v sbom | cut -d '"' -f4 | head -1)
+        curl -sSL "$url" | sudo tar -C /usr/local/bin --no-same-owner -xzv pack
+        pack build "$IMG:$TAG" \
+          --tag "$IMG:latest" \
+          --path "$CONTEXT" \
+          --builder "$BUILDER" \
+          --publish
+
+    - name: Request deployment (tolerant of pre-onboarding 404)
+      shell: bash
+      env:
+        DEPLOY_API: ${{ inputs.console-url }}/api/v1/projects/${{ inputs.project }}/deployments
+        DEPLOY_TOKEN: ${{ inputs.deploy-token }}
+        MODULE: ${{ inputs.module }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        code=$(curl -sS -o /tmp/resp -w '%{http_code}' -X POST "$DEPLOY_API" \
+          -H "Authorization: Bearer ${DEPLOY_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "{\"component\":\"${MODULE}\",\"tag\":\"${TAG}\"}") || true
+        cat /tmp/resp 2>/dev/null; echo
+        if [ "$code" = "404" ]; then
+          echo "::warning::${MODULE}: project not onboarded yet (run deploy-config in the console). Image is in ECR; skipping bump."
+        elif [ "$code" -ge 300 ] 2>/dev/null; then
+          echo "::error::${MODULE}: deploy request failed (HTTP $code)"; exit 1
+        fi

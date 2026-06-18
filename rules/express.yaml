@@ -1,0 +1,21 @@
+id: express
+name: Express (Node)
+kind: service
+priority: 55              # beats react-vite, below nextjs
+
+detect:
+  all:
+    - file: package.json
+  any:
+    - dependency: { manifest: package.json, name: express }
+    - dependency: { manifest: package.json, name: fastify }
+    - dependency: { manifest: package.json, name: koa }
+  none:
+    - file: next.config.js
+
+component:
+  suggestedModule: api
+  defaultPort: 3000
+
+# No dockerfile.ifMissing → built via Cloud Native Buildpacks. Generic Node servers
+# have too-variable start commands to template reliably; buildpacks detect them well.

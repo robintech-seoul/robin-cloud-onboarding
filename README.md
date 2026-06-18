@@ -12,13 +12,15 @@ No AI is required for the supported stacks; the model is the same one Vercel,
 Netlify, Railway (Nixpacks), and `docker init` use in production — see
 [`docs/detection-approaches.md`](docs/detection-approaches.md).
 
-> Status: **working vertical slice (Go).** The engine detects components (Dockerfile dirs
-> or anchor-manifest dirs, incl. monorepos), matches the rule registry, and renders the
-> deploy workflow. Verified on a FastAPI+Vite monorepo and a single Go service; output is
-> valid YAML; `go test` covers detection + render. **Not yet built:** Dockerfile
-> generation, `robin-deploy.yaml` override parsing, `setup-ecr.sh` / `ROBIN_ONBOARDING.md`
-> emission, more stack rules, and distribution (Homebrew/releases). See
-> [`docs/design.md`](docs/design.md) § "Open decisions".
+> Status: **working (Go).** The engine detects components (Dockerfile dirs or
+> anchor-manifest dirs, incl. monorepos), matches the rule registry, renders the deploy
+> workflow (a thin caller of the published `deploy-component` action), and **generates a
+> Dockerfile for any component missing one** (per-stack templates; existing Dockerfiles
+> are never overwritten), **falling back to Cloud Native Buildpacks** for stacks with no
+> template. Installable via Homebrew (`brew install robintech-seoul/tap/rcloud`).
+> `go test` covers detection, render, Dockerfile generation, and build-strategy selection.
+> **Not yet built:** `robin-deploy.yaml` override parsing, `setup-ecr.sh` /
+> `ROBIN_ONBOARDING.md` emission, frontend build-arg wiring. See [`docs/design.md`](docs/design.md).
 
 ## Quickstart
 
@@ -33,7 +35,7 @@ go build -o rcloud .
 ```
 
 Flags: `--project` (required), `--repo` (default `.`), `--region`, `--console`,
-`--oidc-role`, `--branch`, `--dry-run`.
+`--oidc-role`, `--action-ref`, `--branch`, `--dry-run`, `--skip-dockerfiles`.
 
 The generated workflow reads three GitHub Actions secrets (set them on the target repo):
 `AWS_ACCOUNT_ID`, `ROBIN_OIDC_ROLE`, and `ROBIN_DEPLOY_TOKEN` — so no Robin-Cloud account
@@ -68,20 +70,30 @@ pushes a deployable image). The console already owns the platform side:
 The deploy contract the generated workflow must satisfy is documented in
 [`docs/design.md`](docs/design.md) § "Robin-Cloud output contract".
 
+## Supported stacks
+
+Detection is **open-ended, not a fixed list.** Components build by a fidelity ladder:
+
+1. **Has a Dockerfile** (yours or rcloud-generated) → built with Docker — *any* stack.
+2. **Known stack, no Dockerfile** → rcloud generates one: `react-vite`, `nextjs`,
+   `fastapi`, `flask`, `django`, `go-service`.
+3. **Anything else** (incl. `express`, `spring-boot`, `rails`, or an unrecognized repo) →
+   built with **Cloud Native Buildpacks** — no Dockerfile, no rule needed.
+
+So coverage is effectively universal; named rules just yield leaner, tailored images.
+Add a stack by dropping a `rules/*.yaml` (+ optional `templates/dockerfile/*.tmpl`).
+
 ## Layout
 
 ```
-docs/
-  detection-approaches.md   # survey: how to detect language/framework + OSS to reuse
-  design.md                 # architecture, rule schema, output contract, open decisions
-rules/                      # the custom rule registry (one stack profile per file)
-  react-vite.yaml
-  fastapi.yaml
-  go-service.yaml
+docs/                       # detection-approaches.md, design.md, onboarding-ux.md
+rules/                      # custom rule registry (one stack profile per file)
 templates/
-  workflows/
-    deploy-robin-cloud.yml.tmpl   # the canonical generated workflow
-  dockerfile/                     # per-stack Dockerfile templates (TODO as rules grow)
+  workflows/                # the generated caller workflow
+  dockerfile/               # per-stack Dockerfile templates
+.github/actions/
+  deploy-component/         # the published composite action (Docker or buildpacks build)
+packaging/homebrew/         # the rcloud formula
 ```
 
 ## Roadmap (multi-tool)
