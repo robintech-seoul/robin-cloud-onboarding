@@ -11,7 +11,7 @@
 #   1. push this repo to GitHub and tag a release:
 #        git tag v0.1.0 && git push origin main --tags
 #   2. compute the tarball sha256 and paste it below:
-#        curl -sL https://github.com/robintech-seoul/robin-cloud-onboarding/archive/refs/tags/v0.2.1.tar.gz | shasum -a 256
+#        curl -sL https://github.com/robintech-seoul/robin-cloud-onboarding/archive/refs/tags/v0.2.2.tar.gz | shasum -a 256
 #   3. create the tap repo and add this file:
 #        gh repo create robintech-seoul/homebrew-tap --private --clone
 #        # copy this file to homebrew-tap/Formula/rcloud.rb, commit, push
@@ -22,8 +22,8 @@
 class Rcloud < Formula
   desc "Generate GitHub Actions workflows to deploy a repo to Robin-Cloud"
   homepage "https://github.com/robintech-seoul/robin-cloud-onboarding"
-  url "https://github.com/robintech-seoul/robin-cloud-onboarding/archive/refs/tags/v0.2.1.tar.gz"
-  sha256 "52e9288db505aa118466e563432cf0fade6687b376fc03e21125b5a182f5a0f2"
+  url "https://github.com/robintech-seoul/robin-cloud-onboarding/archive/refs/tags/v0.2.2.tar.gz"
+  sha256 "152069e9f3893cfa2a450ef14ed45b6e67a0f71d6df7218d19e1251a057b19b1"
   license "MIT"
   head "https://github.com/robintech-seoul/robin-cloud-onboarding.git", branch: "main"
 
