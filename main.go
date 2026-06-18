@@ -22,6 +22,7 @@ type Options struct {
 	OIDCRole       string
 	Branch          string
 	ActionRef       string
+	Config          string
 	DryRun          bool
 	SkipDockerfiles bool
 }
@@ -42,12 +43,22 @@ func run() error {
 	flag.StringVar(&o.OIDCRole, "oidc-role", "", "IAM role assumed via GitHub OIDC (default: read from the ROBIN_OIDC_ROLE secret; pass a name to bake a literal)")
 	flag.StringVar(&o.Branch, "branch", "main", "branch that triggers deploys")
 	flag.StringVar(&o.ActionRef, "action-ref", "robintech-seoul/robin-cloud-onboarding/.github/actions/deploy-component@main", "the Robin-Cloud deploy composite action (pin a tag/SHA for production)")
+	flag.StringVar(&o.Config, "config", "robin-deploy.yaml", "per-project override file (relative to --repo); used if present")
 	flag.BoolVar(&o.DryRun, "dry-run", false, "print the plan and workflow without writing files")
 	flag.BoolVar(&o.SkipDockerfiles, "skip-dockerfiles", false, "do not generate Dockerfiles for components missing one")
 	flag.Parse()
 
+	set := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+
+	cfg, cfgFound, err := loadConfig(o.Root, o.Config, set["config"])
+	if err != nil {
+		return err
+	}
+	applyConfigDefaults(&o, cfg, set)
+
 	if o.Project == "" {
-		return fmt.Errorf("--project is required (the Robin-Cloud project name)")
+		return fmt.Errorf("--project is required (the Robin-Cloud project name; or set 'project:' in robin-deploy.yaml)")
 	}
 
 	rules, err := loadRules()
@@ -59,7 +70,20 @@ func run() error {
 		return fmt.Errorf("scan repo: %w", err)
 	}
 
-	plan, err := buildPlan(o, detectComponents(s, rules))
+	var comps []Component
+	if len(cfg.Components) > 0 {
+		fmt.Printf("using %s: %d component(s) defined explicitly\n", o.Config, len(cfg.Components))
+		if comps, err = componentsFromConfig(s, rules, cfg.Components); err != nil {
+			return err
+		}
+	} else {
+		if cfgFound {
+			fmt.Printf("using %s (no components listed — auto-detecting)\n", o.Config)
+		}
+		comps = detectComponents(s, rules)
+	}
+
+	plan, err := buildPlan(o, comps)
 	if err != nil {
 		return err
 	}

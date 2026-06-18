@@ -83,6 +83,25 @@ Detection is **open-ended, not a fixed list.** Components build by a fidelity la
 So coverage is effectively universal; named rules just yield leaner, tailored images.
 Add a stack by dropping a `rules/*.yaml` (+ optional `templates/dockerfile/*.tmpl`).
 
+## Naming sub-projects (`robin-deploy.yaml`)
+
+For a monorepo, drop a `robin-deploy.yaml` at the repo root to name each component
+(and pin its context/port) instead of relying on auto-detected names:
+
+```yaml
+project: myproj            # optional — replaces the --project flag
+components:
+  - { module: ml,       context: ./ml-service }
+  - { module: frontend, context: ./web, port: 8080 }
+  - { module: gateway,  context: ./gateway }
+```
+
+When present, these define the deployable set with **your** module names (→ ECR repos
+`myproj-ml`, `myproj-frontend`, `myproj-gateway`); the stack of each `context` is still
+auto-detected, so Dockerfile generation / buildpacks selection still apply. CLI flags
+(`--project`, `--region`, …) override the file; the file overrides built-in defaults.
+Without it, rcloud auto-detects components and names. Point elsewhere with `--config`.
+
 ## Layout
 
 ```

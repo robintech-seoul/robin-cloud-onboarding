@@ -103,85 +103,102 @@ func candidateDirs(s *Signals) []string {
 	return dirs
 }
 
-// detectComponents matches rules against each candidate dir and resolves modules.
+// detectComponents matches rules against each auto-discovered candidate dir.
 func detectComponents(s *Signals, rules []Rule) []Component {
 	used := map[string]bool{}
 	var comps []Component
 	for _, dir := range candidateDirs(s) {
-		var best *Rule
-		bestScore := -1
-		for i := range rules {
-			if ok, score := matchRule(s, dir, rules[i]); ok && score > bestScore {
-				bestScore, best = score, &rules[i]
-			}
-		}
-		hasDocker := s.files[relKey(dir, "Dockerfile")]
-		// Every candidate dir is a real project dir (it has a Dockerfile or an anchor
-		// manifest), so an unmatched dir is still deployable — via buildpacks.
-
-		module, port, kind, ruleID := dirModule(dir), 8080, "service", ""
-		var tmpl string
-		var buildArgs []string
-		if best != nil {
-			module = best.Component.SuggestedModule
-			if module == "" {
-				module = best.ID
-			}
-			if best.Component.DefaultPort != 0 {
-				port = best.Component.DefaultPort
-			}
-			kind, ruleID = best.Kind, best.ID
-			tmpl, buildArgs = best.Dockerfile.IfMissing, best.Dockerfile.BuildArgsFromSecrets
-		}
-		module = dedupeModule(module, used)
-		used[module] = true
-
-		filter := "**"
-		if dir != "." {
-			filter = dir + "/**"
-		}
-
-		// Build strategy (fidelity order): existing Dockerfile → generate one from a
-		// stack template → Cloud Native Buildpacks for everything else.
-		willGenerate := !hasDocker && hasDockerfileTemplate(tmpl)
-		builder := "buildpacks"
-		if hasDocker || willGenerate {
-			builder = "dockerfile"
-		}
-
-		// Stack-specific inputs for Dockerfile generation.
-		var pm, pyModule, djangoWsgi string
-		var hasReq bool
-		switch tmpl {
-		case "react-vite", "nextjs":
-			pm = detectPackageManager(s, dir)
-		case "fastapi", "flask":
-			pyModule = detectPyModule(s, dir)
-			hasReq = s.hasFile(dir, "requirements.txt")
-		case "django":
-			djangoWsgi = detectDjangoWsgi(s, dir)
-			hasReq = s.hasFile(dir, "requirements.txt")
-		}
-
-		comps = append(comps, Component{
-			Module:               module,
-			Context:              workflowPath(dir),
-			FilterGlob:           filter,
-			Port:                 port,
-			Kind:                 kind,
-			RuleID:               ruleID,
-			Builder:              builder,
-			GenerateDockerfile:   willGenerate,
-			DockerTemplate:       tmpl,
-			BuildArgsFromSecrets: buildArgs,
-			ModuleEnv:            envName(module),
-			PackageManager:       pm,
-			PyModule:             pyModule,
-			DjangoWsgi:           djangoWsgi,
-			HasRequirements:      hasReq,
-		})
+		comps = append(comps, buildComponent(s, rules, dir, used, "", 0))
 	}
 	return comps
+}
+
+// bestRule returns the highest-scoring rule that matches dir, or nil.
+func bestRule(s *Signals, dir string, rules []Rule) *Rule {
+	var best *Rule
+	bestScore := -1
+	for i := range rules {
+		if ok, score := matchRule(s, dir, rules[i]); ok && score > bestScore {
+			bestScore, best = score, &rules[i]
+		}
+	}
+	return best
+}
+
+// buildComponent resolves one component at dir. moduleOverride/portOverride (from
+// robin-deploy.yaml) win over the matched rule's suggestions; everything else —
+// stack detection, build strategy, Dockerfile inputs — is still inferred from dir.
+func buildComponent(s *Signals, rules []Rule, dir string, used map[string]bool, moduleOverride string, portOverride int) Component {
+	best := bestRule(s, dir, rules)
+	hasDocker := s.files[relKey(dir, "Dockerfile")]
+
+	module, port, kind, ruleID := dirModule(dir), 8080, "service", ""
+	var tmpl string
+	var buildArgs []string
+	if best != nil {
+		module = best.Component.SuggestedModule
+		if module == "" {
+			module = best.ID
+		}
+		if best.Component.DefaultPort != 0 {
+			port = best.Component.DefaultPort
+		}
+		kind, ruleID = best.Kind, best.ID
+		tmpl, buildArgs = best.Dockerfile.IfMissing, best.Dockerfile.BuildArgsFromSecrets
+	}
+	if moduleOverride != "" {
+		module = moduleOverride
+	}
+	if portOverride != 0 {
+		port = portOverride
+	}
+	module = dedupeModule(module, used)
+	used[module] = true
+
+	filter := "**"
+	if dir != "." {
+		filter = dir + "/**"
+	}
+
+	// Build strategy (fidelity order): existing Dockerfile → generate one from a
+	// stack template → Cloud Native Buildpacks for everything else.
+	willGenerate := !hasDocker && hasDockerfileTemplate(tmpl)
+	builder := "buildpacks"
+	if hasDocker || willGenerate {
+		builder = "dockerfile"
+	}
+
+	// Stack-specific inputs for Dockerfile generation.
+	var pm, pyModule, djangoWsgi string
+	var hasReq bool
+	switch tmpl {
+	case "react-vite", "nextjs":
+		pm = detectPackageManager(s, dir)
+	case "fastapi", "flask":
+		pyModule = detectPyModule(s, dir)
+		hasReq = s.hasFile(dir, "requirements.txt")
+	case "django":
+		djangoWsgi = detectDjangoWsgi(s, dir)
+		hasReq = s.hasFile(dir, "requirements.txt")
+	}
+
+	return Component{
+		Module:               module,
+		Context:              workflowPath(dir),
+		FilterGlob:           filter,
+		Port:                 port,
+		Kind:                 kind,
+		RuleID:               ruleID,
+		Builder:              builder,
+		GenerateDockerfile:   willGenerate,
+		DockerTemplate:       tmpl,
+		BuildArgsFromSecrets: buildArgs,
+		ModuleEnv:            envName(module),
+		PackageManager:       pm,
+		PyModule:             pyModule,
+		DjangoWsgi:           djangoWsgi,
+		HasRequirements:      hasReq,
+	}
 }
 
 // dirModule names a component from its directory ("." → "app", else the basename).
