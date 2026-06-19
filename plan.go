@@ -17,6 +17,8 @@ type Plan struct {
 	BuildArgs      []string // union of component build-arg names (→ secrets in the workflow)
 	Components     []Component
 	AnyChangedExpr string // "needs.changes.outputs.api == 'true' || ..."
+	AnyDockerfile  bool   // some component pins an explicit Dockerfile path
+	AnySSH         bool   // some component needs ssh-agent forwarding for its build
 }
 
 func buildPlan(o Options, comps []Component) (Plan, error) {
@@ -46,6 +48,15 @@ func buildPlan(o Options, comps []Component) (Plan, error) {
 		}
 	}
 	sort.Strings(buildArgs)
+	anyDockerfile, anySSH := false, false
+	for _, c := range comps {
+		if c.Dockerfile != "" {
+			anyDockerfile = true
+		}
+		if c.SSH {
+			anySSH = true
+		}
+	}
 	return Plan{
 		Project:        o.Project,
 		Region:         o.Region,
@@ -56,5 +67,7 @@ func buildPlan(o Options, comps []Component) (Plan, error) {
 		BuildArgs:      buildArgs,
 		Components:     comps,
 		AnyChangedExpr: strings.Join(exprs, " || "),
+		AnyDockerfile:  anyDockerfile,
+		AnySSH:         anySSH,
 	}, nil
 }

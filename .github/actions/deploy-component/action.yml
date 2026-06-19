@@ -43,6 +43,20 @@ inputs:
     description: "Newline-separated KEY=VALUE Docker build args (e.g. frontend VITE_* vars)"
     required: false
     default: ""
+  dockerfile:
+    description: >-
+      Path to the Dockerfile, repo-relative (e.g. 'svc/Dockerfile'). Use with a wider
+      context (e.g. context='.') so a monorepo component can COPY a shared sibling
+      package. Empty → defaults to '<context>/Dockerfile'.
+    required: false
+    default: ""
+  ssh:
+    description: >-
+      SSH agent forwarding for the Docker build (build-push-action 'ssh' input, e.g.
+      'default'). Set when the Dockerfile installs a private dependency via
+      'RUN --mount=type=ssh'. Requires an ssh-agent loaded with a key in the job.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -59,12 +73,19 @@ runs:
     - name: Pick build strategy (Dockerfile vs buildpacks)
       id: strategy
       shell: bash
+      env:
+        DOCKERFILE_IN: ${{ inputs.dockerfile }}
+        CONTEXT: ${{ inputs.context }}
       run: |
-        if [ -f "${{ inputs.context }}/Dockerfile" ]; then
+        # Resolve the Dockerfile path: explicit input wins, else <context>/Dockerfile.
+        DF="$DOCKERFILE_IN"
+        [ -z "$DF" ] && DF="${CONTEXT}/Dockerfile"
+        echo "dockerfile=$DF" >> "$GITHUB_OUTPUT"
+        if [ -f "$DF" ]; then
           echo "mode=dockerfile" >> "$GITHUB_OUTPUT"
         else
           echo "mode=buildpacks" >> "$GITHUB_OUTPUT"
-          echo "::notice::${{ inputs.module }}: no Dockerfile — building with Cloud Native Buildpacks (${{ inputs.buildpacks-builder }})."
+          echo "::notice::${{ inputs.module }}: no Dockerfile at $DF — building with Cloud Native Buildpacks (${{ inputs.buildpacks-builder }})."
         fi
 
     # ---- Dockerfile path ----
@@ -76,6 +97,8 @@ runs:
       uses: docker/build-push-action@v6
       with:
         context: ${{ inputs.context }}
+        file: ${{ steps.strategy.outputs.dockerfile }}
+        ssh: ${{ inputs.ssh }}
         build-args: ${{ inputs.build-args }}
         push: true
         tags: |

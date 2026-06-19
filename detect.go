@@ -9,9 +9,12 @@ import (
 
 // Component is one resolved deployable unit in the plan.
 type Component struct {
-	Module               string // values key, deploy component, ECR repo suffix
-	Context              string // docker build context, workflow path form ("." / "./web")
-	FilterGlob           string // dorny/paths-filter glob, repo-relative ("**" / "web/**")
+	Module               string   // values key, deploy component, ECR repo suffix
+	Context              string   // docker build context, workflow path form ("." / "./web")
+	FilterGlob           string   // dorny/paths-filter glob, repo-relative ("**" / "web/**")
+	Filters              []string // path-filter globs that trigger a rebuild (defaults to [FilterGlob])
+	Dockerfile           string   // explicit Dockerfile path (repo-relative); "" → "<context>/Dockerfile"
+	SSH                  bool      // forward ssh-agent to the build (private deps via --mount=type=ssh)
 	Port                 int
 	Kind                 string
 	RuleID               string
@@ -187,6 +190,7 @@ func buildComponent(s *Signals, rules []Rule, dir string, used map[string]bool, 
 		Module:               module,
 		Context:              workflowPath(dir),
 		FilterGlob:           filter,
+		Filters:              []string{filter},
 		Port:                 port,
 		Kind:                 kind,
 		RuleID:               ruleID,

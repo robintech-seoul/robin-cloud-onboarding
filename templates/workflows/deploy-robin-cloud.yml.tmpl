@@ -35,7 +35,9 @@ jobs:
           filters: |
             [[- range .Components ]]
             [[ .Module ]]:
-              - '[[ .FilterGlob ]]'
+              [[- range .Filters ]]
+              - '[[ . ]]'
+              [[- end ]]
             [[- end ]]
 
   # 2. Build + push + deploy each changed component via the Robin-Cloud action.
@@ -49,6 +51,12 @@ jobs:
           [[- range .Components ]]
           - module: [[ .Module ]]
             context: [[ .Context ]]
+            [[- if $.AnyDockerfile ]]
+            dockerfile: "[[ .Dockerfile ]]"
+            [[- end ]]
+            [[- if $.AnySSH ]]
+            ssh: [[ if .SSH ]]"true"[[ else ]]"false"[[ end ]]
+            [[- end ]]
             changed: ${{ needs.changes.outputs.[[ .Module ]] }}
           [[- end ]]
     if: ${{ github.event_name == 'workflow_dispatch' || [[ .AnyChangedExpr ]] }}
@@ -58,6 +66,17 @@ jobs:
       - name: Skip if unchanged (push only)
         if: github.event_name == 'push' && matrix.changed != 'true'
         run: echo "no changes in ${{ matrix.module }}; skipping" && exit 0
+[[- if .AnySSH ]]
+
+      # Components with ssh:true install a private build dependency via
+      # `RUN --mount=type=ssh`. Load an ssh-agent with a deploy key that can read it.
+      # Provide it as the ROBIN_BUILD_SSH_KEY repo secret (an SSH private key).
+      - name: Set up SSH agent (private build deps)
+        if: matrix.ssh == 'true' && (github.event_name == 'workflow_dispatch' || matrix.changed == 'true')
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.ROBIN_BUILD_SSH_KEY }}
+[[- end ]]
 
       - name: Build, push, and deploy
         if: github.event_name == 'workflow_dispatch' || matrix.changed == 'true'
@@ -66,6 +85,12 @@ jobs:
           project: [[ .Project ]]
           module: ${{ matrix.module }}
           context: ${{ matrix.context }}
+          [[- if .AnyDockerfile ]]
+          dockerfile: ${{ matrix.dockerfile }}
+          [[- end ]]
+          [[- if .AnySSH ]]
+          ssh: ${{ matrix.ssh == 'true' && 'default' || '' }}
+          [[- end ]]
           tag: ${{ github.sha }}
           # Account ID and role are NOT hardcoded — sourced from this repo's secrets.
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}

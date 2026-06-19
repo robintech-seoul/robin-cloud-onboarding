@@ -124,7 +124,10 @@ func generateDockerfiles(o Options, plan Plan) error {
 		if err != nil {
 			return fmt.Errorf("render Dockerfile for %q: %w", c.Module, err)
 		}
-		rel := dockerfilePath(c.Context)
+		rel := c.Dockerfile
+		if rel == "" {
+			rel = dockerfilePath(c.Context)
+		}
 		if !ok {
 			fmt.Printf("note: component %q (stack %q) has no Dockerfile template — add %s manually\n", c.Module, c.DockerTemplate, rel)
 			continue
