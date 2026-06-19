@@ -18,8 +18,9 @@ type Component struct {
 	Builder              string   // "dockerfile" | "buildpacks"
 	GenerateDockerfile   bool     // missing Dockerfile AND a stack template exists → generate one
 	DockerTemplate       string   // rule's dockerfile.ifMissing template id
-	BuildArgsFromSecrets []string
-	ModuleEnv            string // module uppercased for shell env var names
+	BuildArgsFromSecrets []string // rule's glob patterns (e.g. VITE_*)
+	BuildArgs            []string // concrete build-arg names detected from .env* files
+	ModuleEnv            string   // module uppercased for shell env var names
 
 	// Stack-specific inputs for Dockerfile generation.
 	PackageManager  string // node: npm | pnpm | yarn
@@ -193,12 +194,63 @@ func buildComponent(s *Signals, rules []Rule, dir string, used map[string]bool, 
 		GenerateDockerfile:   willGenerate,
 		DockerTemplate:       tmpl,
 		BuildArgsFromSecrets: buildArgs,
+		BuildArgs:            detectBuildArgs(s, dir, buildArgs),
 		ModuleEnv:            envName(module),
 		PackageManager:       pm,
 		PyModule:             pyModule,
 		DjangoWsgi:           djangoWsgi,
 		HasRequirements:      hasReq,
 	}
+}
+
+// detectBuildArgs reads the component's .env* files and returns the variable names
+// that match the rule's buildArgsFromSecrets glob patterns (e.g. VITE_*). Only names
+// are read, never values; the values come from CI secrets at build time.
+func detectBuildArgs(s *Signals, dir string, patterns []string) []string {
+	if len(patterns) == 0 {
+		return nil
+	}
+	prefix := ""
+	if dir != "." {
+		prefix = dir + "/"
+	}
+	seen := map[string]bool{}
+	var names []string
+	for f := range s.files {
+		rest, ok := strings.CutPrefix(f, prefix)
+		if !ok || strings.Contains(rest, "/") {
+			continue // only files directly in the component dir
+		}
+		if !strings.HasPrefix(rest, ".env") {
+			continue
+		}
+		content, ok := s.readFile(dir, rest)
+		if !ok {
+			continue
+		}
+		for _, line := range strings.Split(content, "\n") {
+			line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "export "))
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			key := line
+			if i := strings.IndexByte(line, '='); i >= 0 {
+				key = strings.TrimSpace(line[:i])
+			}
+			if key == "" || seen[key] {
+				continue
+			}
+			for _, p := range patterns {
+				if matched, _ := path.Match(p, key); matched {
+					seen[key] = true
+					names = append(names, key)
+					break
+				}
+			}
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // dirModule names a component from its directory ("." → "app", else the basename).

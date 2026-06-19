@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -12,7 +13,8 @@ type Plan struct {
 	ConsoleBaseURL string
 	OIDCRole       string
 	DefaultBranch  string
-	ActionRef      string // the deploy composite action ref (owner/repo/path@ref)
+	ActionRef      string   // the deploy composite action ref (owner/repo/path@ref)
+	BuildArgs      []string // union of component build-arg names (→ secrets in the workflow)
 	Components     []Component
 	AnyChangedExpr string // "needs.changes.outputs.api == 'true' || ..."
 }
@@ -31,6 +33,19 @@ func buildPlan(o Options, comps []Component) (Plan, error) {
 	if role == "" {
 		role = "${{ secrets.ROBIN_OIDC_ROLE }}"
 	}
+	// Union of every component's detected build-arg names, passed to the build step as
+	// secrets. Each Dockerfile only consumes the ARGs it declares.
+	seen := map[string]bool{}
+	var buildArgs []string
+	for _, c := range comps {
+		for _, a := range c.BuildArgs {
+			if !seen[a] {
+				seen[a] = true
+				buildArgs = append(buildArgs, a)
+			}
+		}
+	}
+	sort.Strings(buildArgs)
 	return Plan{
 		Project:        o.Project,
 		Region:         o.Region,
@@ -38,6 +53,7 @@ func buildPlan(o Options, comps []Component) (Plan, error) {
 		OIDCRole:       role,
 		DefaultBranch:  o.Branch,
 		ActionRef:      o.ActionRef,
+		BuildArgs:      buildArgs,
 		Components:     comps,
 		AnyChangedExpr: strings.Join(exprs, " || "),
 	}, nil

@@ -73,3 +73,11 @@ jobs:
           deploy-token: ${{ secrets.ROBIN_DEPLOY_TOKEN }}
           region: [[ .Region ]]
           console-url: [[ .ConsoleBaseURL ]]
+[[- if .BuildArgs ]]
+          # Frontend build-time vars (set these as repo secrets). Each Dockerfile
+          # consumes only the ARGs it declares; others are harmlessly ignored.
+          build-args: |
+[[- range .BuildArgs ]]
+            [[ . ]]=${{ secrets.[[ . ]] }}
+[[- end ]]
+[[- end ]]

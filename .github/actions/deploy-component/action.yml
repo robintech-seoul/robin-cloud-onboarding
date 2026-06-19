@@ -39,6 +39,10 @@ inputs:
     description: "CNB builder image used when no Dockerfile is present"
     required: false
     default: "paketobuildpacks/builder-jammy-full"
+  build-args:
+    description: "Newline-separated KEY=VALUE Docker build args (e.g. frontend VITE_* vars)"
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -72,6 +76,7 @@ runs:
       uses: docker/build-push-action@v6
       with:
         context: ${{ inputs.context }}
+        build-args: ${{ inputs.build-args }}
         push: true
         tags: |
           ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.region }}.amazonaws.com/${{ inputs.project }}-${{ inputs.module }}:${{ inputs.tag }}

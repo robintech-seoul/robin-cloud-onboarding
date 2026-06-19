@@ -2,6 +2,10 @@
 # For a smaller image, set `output: 'standalone'` in next.config and adapt this file.
 FROM node:20-alpine
 WORKDIR /app
+[[- range .BuildArgs ]]
+ARG [[ . ]]
+ENV [[ . ]]=$[[ . ]]
+[[- end ]]
 [[- if eq .PackageManager "pnpm" ]]
 RUN corepack enable
 COPY package.json pnpm-lock.yaml* ./
