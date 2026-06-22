@@ -1,9 +1,16 @@
 # Known limitations
 
+> **Update (v0.3.0):** items **1–3 are now addressed.** Set per-component
+> `context` (e.g. `.` for a wider build context) + `dockerfile` + `watch` globs and
+> `ssh: true` in `robin-deploy.yaml` (limitations 1 & 2); frontend build-args
+> (`VITE_*`/`NEXT_PUBLIC_*`) are auto-detected from `.env*` and passed as build secrets
+> (limitation 3). The "Planned fix" notes below describe what shipped. Items **4–5
+> remain.**
+
 rcloud builds each component with **its own folder as an isolated Docker build
 context**, via the shared `deploy-component` action (`docker build` or buildpacks).
 That model is simple and covers most repos, but it breaks for a few real cases.
-This catalogs them with today's workaround and the planned fix.
+This catalogs them with today's workaround and the fix.
 
 > The workarounds that say "hand-edit the workflow step" are stopgaps: rcloud
 > **overwrites** `.github/workflows/deploy-robin-cloud.yml` on every run, so those edits

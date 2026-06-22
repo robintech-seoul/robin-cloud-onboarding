@@ -18,11 +18,13 @@ Netlify, Railway (Nixpacks), and `docker init` use in production — see
 > Dockerfile for any component missing one** (per-stack templates; existing Dockerfiles
 > are never overwritten), **falling back to Cloud Native Buildpacks** for stacks with no
 > template. Installable via Homebrew (`brew install robintech-seoul/tap/rcloud`).
-> `robin-deploy.yaml` lets you name/scope monorepo sub-projects. `go test` covers
-> detection, render, Dockerfile generation, build-strategy selection, and config.
-> **Not yet built:** `setup-ecr.sh` / `ROBIN_ONBOARDING.md` emission, frontend build-arg
-> wiring, monorepo shared-dep / private-dep build support — see
-> [`docs/limitations.md`](docs/limitations.md). Architecture: [`docs/design.md`](docs/design.md).
+> `robin-deploy.yaml` names/scopes monorepo sub-projects and (v0.3.0) sets a wider build
+> `context` + `dockerfile` path + `watch` globs for shared-lib monorepos, `ssh: true` for
+> private deps, and auto-passes frontend `VITE_*`/`NEXT_PUBLIC_*` build-args. `go test`
+> covers detection, render, Dockerfile generation, build-strategy, config, and monorepo
+> wiring. **Not yet built:** `setup-ecr.sh` / `ROBIN_ONBOARDING.md` emission, generated
+> `.dockerignore` — see [`docs/limitations.md`](docs/limitations.md). Architecture:
+> [`docs/design.md`](docs/design.md).
 
 ## Quickstart
 
