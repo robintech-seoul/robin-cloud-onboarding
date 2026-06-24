@@ -1,0 +1,5 @@
+{
+  "env": {
+    "PULSE_CODE_PATHS": "*.go rules templates .github/actions"
+  }
+}
